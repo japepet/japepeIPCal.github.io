@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Complete IP Subnet Tool — IPv4 & IPv6</title>
+
+  <!-- Bootstrap -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- ip-address lib for IPv6 handling -->
+  <script src="https://cdn.jsdelivr.net/npm/ip-address@9.0.5/dist/ip-address.min.js"></script>
+
+  <style>
+    body { background:#f6f7f9; font-family: Inter, Arial, sans-serif; padding:20px; }
+    .card { border-radius:10px; box-shadow:0 6px 20px rgba(0,0,0,0.06); }
+    .mono { font-family: "Courier New", monospace; }
+    .hosts-scroll { max-height:420px; overflow:auto; }
+    .small-muted { color:#6c757d; font-size:0.9rem; }
+    .bit-net { background:#d4f7d4; }   /* green */
+    .bit-host { background:#fff6c2; }  /* yellow */
+    .bit-text { font-family: "Courier New", monospace; padding:2px 4px; border-radius:4px; display:inline-block; margin:1px 2px; }
+    .hextet { margin-bottom:8px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1 class="mb-3 text-center">Complete IP Subnet Tool — IPv4 & IPv6</h1>
+
+  <div class="card p-3 mb-3">
+    <div class="row g-2">
+      <div class="col-md-8">
+        <label class="form-label">IP address with CIDR</label>
+        <input id="ipInput" class="form-control" placeholder="e.g. 192.168.1.10/26 or 2001:db8::1/64">
+        <div class="form-text small-muted">Include the slash CIDR. Tool auto-detects IPv4 or IPv6.</div>
+      </div>
+
+      <div class="col-md-4 d-grid">
+        <button class="btn btn-primary btn-lg" onclick="doAnalyze()">Analyze</button>
+        <div class="d-flex gap-2 mt-2">
+          <button class="btn btn-success flex-fill" onclick="openHostsModal()">Show All Usable Hosts</button>
+          <button class="btn btn-info flex-fill" data-bs-toggle="modal" data-bs-target="#formulaModal">Show Formula</button>
+        </div>
+        <div class="d-flex gap-2 mt-2">
+          <button class="btn btn-secondary flex-fill" data-bs-toggle="modal" data-bs-target="#binaryModal">Binary & Octets/Hextets</button>
+          <button class="btn btn-outline-secondary flex-fill" data-bs-toggle="modal" data-bs-target="#splitModal">Split Network</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="resultsArea"></div>
+
+  <div id="actionButtons" class="my-3" style="display:none;">
+    <button class="btn btn-primary btn-sm" onclick="exportResultsCSV()">Export Results CSV</button>
+    <button class="btn btn-outline-secondary btn-sm" onclick="copyResultsToClipboard()">Copy Results</button>
+  </div>
+</div>
+
+<!-- Hosts Modal -->
+<div class="modal fade" id="hostsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Usable Hosts</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="hostsInfo" class="mb-2 small-muted"></div>
+        <div class="form-check form-switch mb-2">
+          <input class="form-check-input" type="checkbox" role="switch" id="hostsShowBinary">
+          <label class="form-check-label" for="hostsShowBinary">Show binary next to each IPv4 host (slower)</label>
+        </div>
+        <div class="hosts-scroll">
+          <ol id="hostsList" class="list-group mono"></ol>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <a id="downloadHostsLink" class="btn btn-outline-primary" href="#" download>Download .txt</a>
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Formula Modal -->
+<div class="modal fade" id="formulaModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Step-by-step Subnet Formula & Example</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="formulaContent" class="mono"></div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Binary Modal -->
+<div class="modal fade" id="binaryModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Binary & Octets / Hextets Breakdown</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="binaryContent" class="mono"></div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Split Network Modal -->
+<div class="modal fade" id="splitModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Split Network into smaller subnets</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small-muted">Enter target prefix (must be larger than current prefix). Example: split /16 → /24 (enter 24).</p>
+        <div class="input-group mb-2">
+          <input id="splitPrefix" type="number" class="form-control" placeholder="Target prefix (e.g., 24)">
+          <button class="btn btn-primary" onclick="splitNetwork()">Split</button>
+        </div>
+        <div id="splitInfo"></div>
+        <div class="hosts-scroll mt-2"><div id="splitList" class="mono"></div></div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+/* ---------- Utilities ---------- */
+function pad8(n){ return n.toString(2).padStart(8,'0'); }
+function ipToInt(ip){
+  const p = ip.split('.').map(x=>parseInt(x,10));
+  return (((p[0]<<24)>>>0) + (p[1]<<16) + (p[2]<<8) + p[3]) >>> 0;
+}
+function intToIp(i){ i = i>>>0; return [(i>>>24)&255,(i>>>16)&255,(i>>>8)&255,i&255].join('.'); }
+function isIPv4(s){ return /^(\d{1,3}\.){3}\d{1,3}$/.test(s) && s.split('.').every(n=>+n>=0 && +n<=255); }
+function safePrompt(msg, def){ try { return prompt(msg, def); } catch(e) { return def; } }
+
+/* Global calc state */
+window._state = { kind:null };
+
+/* ---------- Main analyze function ---------- */
+function doAnalyze(){
+  const raw = document.getElementById('ipInput').value.trim();
+  if(!raw.includes('/')){ alert('Include CIDR (e.g. /24 or /64)'); return; }
+  const [addr, prefixStr] = raw.split('/');
+  if(!addr || !prefixStr){ alert('Invalid format. Use IP/CIDR'); return; }
+  const prefix = parseInt(prefixStr,10);
+  // reset UI
+  document.getElementById('resultsArea').innerHTML = '';
+  document.getElementById('actionButtons')?.style?.setProperty('display','inline-block');
+
+  // IPv6 path
+  if(addr.includes(':')){
+    if(Number.isNaN(prefix) || prefix < 1 || prefix > 128){ alert('IPv6 prefix must be 1-128'); return; }
+    try {
+      const Address6 = window.Address6;
+      const a6 = new Address6(addr + '/' + prefix);
+      if(!a6.isValid()) { alert('Invalid IPv6 address'); return; }
+      const network = a6.startAddress().correctForm();
+      const first = a6.startAddress().correctForm();
+      const last = a6.endAddress().correctForm();
+      const total = (BigInt(2) ** BigInt(128 - prefix)).toString();
+
+      window._state = { kind:'ipv6', raw, addr, prefix, a6 };
+
+      let html = `<div class="card p-3"><h4>IPv6 Analysis</h4>
+        <table class="table table-sm table-bordered result-table">
+          <tr><th style="width:30%">Input</th><td class="mono">${raw}</td></tr>
+          <tr><th>Network ID</th><td class="mono">${network}/${prefix}</td></tr>
+          <tr><th>First Address</th><td class="mono">${first}</td></tr>
+          <tr><th>Last Address</th><td class="mono">${last}</td></tr>
+          <tr><th>Total Addresses</th><td class="mono">${total}</td></tr>
+          <tr><th>Prefix Length</th><td class="mono">/${prefix}</td></tr>
+          <tr><th>Type</th><td class="mono">${a6.getType ? a6.getType() : 'IPv6'}</td></tr>
+        </table>
+        <div class="small-muted">IPv6 ranges are huge — listing all addresses is disabled. Use binary/hextet view for bit-level understanding.</div>
+        </div>`;
+      document.getElementById('resultsArea').innerHTML = html;
+
+      // formula modal filled
+      document.getElementById('formulaContent').innerText =
+        `IPv6 Example for ${raw}\n\nPrefix: /${prefix}\nNetwork bits = ${prefix}\nHost bits = ${128 - prefix}\nTotal addresses = 2^(${128 - prefix})\n\nNote: IPv6 does not use broadcast addresses like IPv4.`;
+
+      // build binary/hextet view
+      buildIPv6BinaryView(a6, prefix);
+      return;
+    } catch(e){
+      console.error(e);
+      alert('Invalid IPv6 address'); return;
+    }
+  }
+
+  // IPv4 path
+  if(!isIPv4(addr)){ alert('Invalid IPv4 address'); return; }
+  if(Number.isNaN(prefix) || prefix < 0 || prefix > 32){ alert('IPv4 prefix must be 0-32'); return; }
+
+  const ipNum = ipToInt(addr);
+  const mask = (0xFFFFFFFF << (32 - prefix)) >>> 0;
+  const maskArr = [(mask>>>24)&255, (mask>>>16)&255, (mask>>>8)&255, mask&255];
+  const maskStr = maskArr.join('.');
+  const wildcard = maskArr.map(x=>255-x).join('.');
+  const netNum = (ipNum & mask) >>> 0;
+  const bcastNum = (netNum | (~mask >>> 0)) >>> 0;
+  const totalAddrs = Math.pow(2, 32 - prefix);
+  const usable = totalAddrs > 2 ? totalAddrs - 2 : (prefix === 32 ? 1 : 0);
+  const firstNum = (prefix === 32) ? netNum : (netNum + 1) >>> 0;
+  const lastNum = (prefix === 32) ? netNum : (bcastNum - 1) >>> 0;
+  const firstOct = parseInt(addr.split('.')[0],10);
+  const ipClass = (firstOct>=1 && firstOct<=126) ? 'A' : (firstOct<=191?'B':(firstOct<=223?'C':(firstOct<=239?'D':'E')));
+  const parts = addr.split('.').map(Number);
+  const ipType = ((parts[0]===10) || (parts[0]===172 && parts[1]>=16 && parts[1]<=31) || (parts[0]===192 && parts[1]===168)) ? 'Private' : 'Public';
+
+  window._state = {
+    kind:'ipv4', raw, addr, prefix,
+    ipNum, mask, maskArr, maskStr, wildcard,
+    netNum, bcastNum, totalAddrs, usable, firstNum, lastNum, ipClass, ipType
+  };
+
+  // render results
+  const binaryIP = addr.split('.').map(n=>pad8(+n)).join('.');
+  const netIP = intToIp(netNum);
+  const bcastIP = intToIp(bcastNum);
+
+  const rows = [
+    ['Input', raw],
+    ['IP (binary)', binaryIP],
+    ['Network ID', `${netIP}`],
+    ['Network (binary)', netIP.split('.').map(n=>pad8(+n)).join('.')],
+    ['Broadcast', bcastIP],
+    ['Broadcast (binary)', bcastIP.split('.').map(n=>pad8(+n)).join('.')],
+    ['First usable', intToIp(firstNum)],
+    ['Last usable', intToIp(lastNum)],
+    ['Usable hosts', usable],
+    ['Total addresses', totalAddrs],
+    ['Subnet mask', maskStr],
+    ['Wildcard mask', wildcard],
+    ['Prefix length', '/' + prefix],
+    ['Host bits', 32 - prefix],
+    ['IP Class', ipClass],
+    ['IP Type', ipType]
+  ];
+
+  let html = `<div class="card p-3"><h4>IPv4 Analysis</h4><table class="table table-sm table-bordered result-table">`;
+  rows.forEach(r => html += `<tr><th style="width:30%">${r[0]}</th><td class="mono">${r[1]}</td></tr>`);
+  html += `</table><div class="small-muted">Click <strong>Show All Usable Hosts</strong> to view a numbered list (limited for large subnets).</div></div>`;
+  document.getElementById('resultsArea').innerHTML = html;
+  document.getElementById('actionButtons').style.display = 'inline-block';
+
+  // formula & binary views prebuilt
+  buildIPv4Formula(addr, prefix, maskArr, netIP, bcastIP, totalAddrs, usable);
+  buildIPv4BinaryView(addr, prefix, maskArr);
+}
+
+/* ---------- Formula builders ---------- */
+function buildIPv4Formula(ip, prefix, maskArr, netIP, bcastIP, total, usable){
+  const binMask = "1".repeat(prefix) + "0".repeat(32-prefix);
+  const octets = [binMask.slice(0,8), binMask.slice(8,16), binMask.slice(16,24), binMask.slice(24,32)];
+  const decimalMask = maskArr.join('.');
+  const inverted = maskArr.map(x=>255-x).join('.');
+  const steps = [
+    `Step 1 — CIDR: /${prefix} → first ${prefix} bits are 1, remaining ${32-prefix} bits are 0.`,
+    `Step 2 — Binary mask: ${binMask} (grouped: ${octets.join(' ')})`,
+    `Step 3 — Convert each 8-bit octet to decimal → ${decimalMask}`,
+    `Step 4 — Wildcard mask = invert subnet mask → ${inverted}`,
+    `Step 5 — Network address = IP AND Mask → ${ip} AND ${decimalMask} = ${netIP}`,
+    `Step 6 — Broadcast = Network OR Wildcard → ${netIP} OR ${inverted} = ${bcastIP}`,
+    `Step 7 — Total addresses = 2^(${32-prefix}) = ${total}`,
+    `Step 8 — Usable hosts (traditional) = ${total} - 2 = ${usable} (exceptions: /31 and /32)`
+  ];
+  document.getElementById('formulaContent').innerText = `IPv4 Example for ${ip}/${prefix}\n\n` + steps.join('\n\n');
+}
+
+function buildIPv6BinaryView(a6, prefix){
+  // canonical 8 hextets
+  try {
+    const canonical = a6.canonicalForm(); // e.g. 2001:0db8:0000:0000:0000:0000:0000:0001
+    const hextets = canonical.split(':').map(h => h.padStart(4,'0'));
+    const binaryHextets = hextets.map(h => parseInt(h,16).toString(2).padStart(16,'0'));
+    // color by prefix
+    let html = `<h5>IPv6 Binary & Hextet Breakdown (green=network, yellow=host)</h5>`;
+    let bitIndex = 0;
+    binaryHextets.forEach((bin, idx) => {
+      let groupHTML = '';
+      for(let i=0;i<16;i++){
+        const bit = bin[i];
+        const cls = (bitIndex < prefix) ? 'bit-net' : 'bit-host';
+        groupHTML += `<span class="bit-text ${cls}">${bit}</span>`;
+        bitIndex++;
+      }
+      html += `<div class="hextet"><strong>Hextet ${idx+1}</strong> &nbsp; <span class="mono">${hextets[idx]}</span> &nbsp; ${groupHTML}</div>`;
+    });
+    document.getElementById('binaryContent').innerHTML = html;
+  } catch(e){
+    document.getElementById('binaryContent').innerText = 'Unable to build IPv6 binary view.';
+  }
+}
+
+function buildIPv4BinaryView(ip, prefix, maskArr){
+  const octets = ip.split('.').map(n => (+n));
+  const ipBinOctets = octets.map(o => pad8(o));
+  let ipBitsHTML = '';
+  let bitIndex = 0;
+  ipBinOctets.forEach((oct, oi) => {
+    let octHTML = '';
+    for(let i=0;i<8;i++){
+      const bit = oct[i];
+      const cls = (bitIndex < prefix) ? 'bit-net' : 'bit-host';
+      octHTML += `<span class="bit-text ${cls}">${bit}</span>`;
+      bitIndex++;
+    }
+    ipBitsHTML += `<div style="margin-bottom:6px;"><strong>Octet ${oi+1}</strong> &nbsp; ${oct} &nbsp; ${octHTML}</div>`;
+  });
+  const maskBitsHTML = maskArr.map((m,i) => `<div><strong>Mask Octet ${i+1}</strong> ${pad8(m)} (${m})</div>`).join('');
+  document.getElementById('binaryContent').innerHTML =
+    `<h5>IPv4 Binary (green=network, yellow=host)</h5>
+     <div>${ipBitsHTML}</div>
+     <h6 class="mt-3">Mask Octets</h6><div>${maskBitsHTML}</div>`;
+}
+
+/* ---------- Hosts modal & download ---------- */
+function openHostsModal(){
+  if(!window._state || window._state.kind !== 'ipv4'){ alert('Usable hosts list is available for IPv4 after Analyze.'); return; }
+
+  const usable = window._state.usable;
+  const total = window._state.totalAddrs;
+  const prefix = window._state.prefix;
+  const start = window._state.firstNum;
+  const end = window._state.lastNum;
+  const MAX_SHOW = 5000;
+
+  const hostsInfo = document.getElementById('hostsInfo');
+  const hostsList = document.getElementById('hostsList');
+  hostsList.innerHTML = '';
+  hostsInfo.textContent = `Subnet: ${window._state.raw} — Usable hosts: ${usable} (Total addresses: ${total})`;
+
+  if(usable === 0){
+    hostsList.innerHTML = '<li class="list-group-item">No usable hosts (traditional rules) for this prefix.</li>';
+    prepareHostsDownload();
+    new bootstrap.Modal(document.getElementById('hostsModal')).show();
+    return;
+  }
+
+  if(usable > MAX_SHOW){
+    const wantDownload = confirm(`This subnet has ${usable} usable hosts. Showing them all can be slow. OK = download .txt, Cancel = show first ${MAX_SHOW}.`);
+    if(wantDownload){ generateHostsFile(); return; }
+  }
+
+  const showBinary = document.getElementById('hostsShowBinary').checked;
+  let index = 1;
+  for(let i = start; i <= end && index <= MAX_SHOW; i++, index++){
+    const ip = intToIp(i >>> 0);
+    const li = document.createElement('li');
+    li.className = 'list-group-item';
+    if(showBinary){
+      li.innerHTML = `<strong>${index}.</strong> ${ip} &nbsp; <span class="mono">${ip.split('.').map(n=>pad8(+n)).join(' ')}</span>`;
+    } else {
+      li.innerHTML = `<strong>${index}.</strong> ${ip}`;
+    }
+    hostsList.appendChild(li);
+  }
+
+  prepareHostsDownload();
+  new bootstrap.Modal(document.getElementById('hostsModal')).show();
+}
+
+function prepareHostsDownload(){
+  const link = document.getElementById('downloadHostsLink');
+  link.onclick = function(e){
+    e.preventDefault();
+    const def = `hosts_${window._state.addr.replace(/\./g,'_')}_${window._state.prefix}.txt`;
+    const filename = safePrompt('Filename for hosts export (.txt):', def) || def;
+    generateHostsFile(filename);
+  };
+}
+
+function generateHostsFile(filename = 'hosts.txt'){
+  if(!window._state || window._state.kind !== 'ipv4'){ alert('No IPv4 data'); return; }
+  const start = window._state.firstNum;
+  const end = window._state.lastNum;
+  const count = end - start + 1;
+  const MAX_MEM = 500000;
+  let limit = count;
+  let truncated = false;
+  if(count > MAX_MEM){ limit = MAX_MEM; truncated = true; }
+
+  const parts = [];
+  for(let i=0;i<limit;i++){
+    parts.push(intToIp((start + i) >>> 0) + '\n');
+  }
+  if(truncated) parts.push('... truncated due to size. Use server-side tools for full export.\n');
+
+  const blob = new Blob(parts, {type:'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename.endsWith('.txt') ? filename : (filename + '.txt');
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+
+/* ---------- Split network (friendly) ---------- */
+function splitNetwork(){
+  if(!window._state || window._state.kind !== 'ipv4'){ alert('Calculate an IPv4 network first to split'); return; }
+  const target = parseInt(document.getElementById('splitPrefix').value,10);
+  if(Number.isNaN(target) || target <= window._state.prefix || target > 32){ alert('Enter a valid target prefix greater than current prefix and ≤ 32'); return; }
+
+  const baseNet = window._state.netNum;
+  const basePrefix = window._state.prefix;
+  const subnetCount = Math.pow(2, target - basePrefix);
+  const perSize = Math.pow(2, 32 - target);
+  const maxShow = 10000;
+  const nbToShow = Math.min(subnetCount, maxShow);
+
+  let help = `<div class="small-muted mb-2">Splitting <strong>${window._state.raw}</strong> (/ ${basePrefix}) into <strong>${subnetCount}</strong> subnets of /${target}. Each subnet has ${perSize} addresses (${perSize>2? perSize-2+' usable hosts' : (perSize===1?'1 addr':'0 usable')}). Showing ${nbToShow} first subnets.</div>`;
+  let table = `<table class="table table-sm table-bordered"><thead><tr><th>#</th><th>Subnet</th><th>First usable</th><th>Last usable</th></tr></thead><tbody>`;
+  for(let i=0;i<nbToShow;i++){
+    const net = (baseNet + (i * perSize)) >>> 0;
+    const bcast = (net + perSize - 1) >>> 0;
+    const first = perSize > 2 ? (net + 1)>>>0 : net;
+    const last = perSize > 2 ? (bcast - 1)>>>0 : bcast;
+    table += `<tr><td>${i+1}</td><td class="mono">${intToIp(net)}/${target}</td><td class="mono">${intToIp(first)}</td><td class="mono">${intToIp(last)}</td></tr>`;
+  }
+  if(subnetCount > maxShow) table += `<tr><td colspan="4">... ${subnetCount - maxShow} more subnets omitted (too many to render)</td></tr>`;
+  table += '</tbody></table>';
+
+  document.getElementById('splitInfo').innerHTML = help;
+  document.getElementById('splitList').innerHTML = table;
+  new bootstrap.Modal(document.getElementById('splitModal')).show();
+}
+
+/* ---------- Export & Copy ---------- */
+function exportResultsCSV(){
+  const table = document.querySelector('#resultsArea table');
+  if(!table){ alert('No results to export'); return; }
+  const rows = [];
+  table.querySelectorAll('tr').forEach(tr=>{
+    const th = tr.querySelector('th'); const td = tr.querySelector('td');
+    if(th && td) rows.push([th.innerText.trim(), td.innerText.trim()]);
+  });
+  const csv = rows.map(r => `"${r[0].replace(/"/g,'""')}","${r[1].replace(/"/g,'""')}"`).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'}); const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = `ip_results_${Date.now()}.csv`; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+
+function copyResultsToClipboard(){
+  const table = document.querySelector('#resultsArea table');
+  if(!table){ alert('No results to copy'); return; }
+  let text = '';
+  table.querySelectorAll('tr').forEach(tr=>{
+    const th = tr.querySelector('th'); const td = tr.querySelector('td');
+    if(th && td) text += `${th.innerText}\t${td.innerText}\n`;
+  });
+  navigator.clipboard?.writeText(text).then(()=> alert('Results copied to clipboard'), ()=> alert('Copy failed'));
+}
+</script>
+</body>
+</html>
